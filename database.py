@@ -3,47 +3,49 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
-# 加载环境变量
+# Load environment variables
 load_dotenv()
 
 def get_connection():
-    """创建并返回数据库连接"""
+    """Create and return a database connection"""
     try:
         conn = psycopg2.connect(
             os.getenv("DATABASE_URL"),
-            cursor_factory=RealDictCursor  # 返回字典形式的结果
+            cursor_factory=RealDictCursor  # Return results as dictionaries
         )
         return conn
     except Exception as e:
-        print(f"数据库连接失败: {e}")
+        print(f"Database connection failed: {e}")
         return None
 
-def save_user_interests(user_id, interests):
-    """保存用户兴趣到数据库"""
+def save_user_interests(user_id, username, interests):
+    """Save user interests and username to database"""
     conn = get_connection()
     if conn is None:
-        print("数据库连接失败")
+        print("Database connection failed")
         return False
 
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO users (user_id, interests)
-            VALUES (%s, %s)
+            INSERT INTO users (user_id, username, interests)
+            VALUES (%s, %s, %s)
             ON CONFLICT (user_id) 
-            DO UPDATE SET interests = EXCLUDED.interests;
-        """, (str(user_id), interests))  # 将 user_id 转换为字符串
+            DO UPDATE SET 
+                username = EXCLUDED.username,
+                interests = EXCLUDED.interests;
+        """, (str(user_id), username, interests))
         conn.commit()
-        print(f"成功保存用户 {user_id} 的兴趣：{interests}")
+        print(f"Successfully saved interests for user {username}: {interests}")
         return True
     except Exception as e:
-        print(f"保存用户兴趣失败: {e}")
+        print(f"Failed to save user interests: {e}")
         return False
     finally:
         conn.close()
 
 def find_matching_users(user_id, interests):
-    """根据兴趣匹配其他用户"""
+    """Find other users with matching interests"""
     conn = get_connection()
     if conn is None:
         return []
@@ -51,16 +53,16 @@ def find_matching_users(user_id, interests):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT user_id, interests 
+            SELECT username, interests 
             FROM users 
-            WHERE user_id != %s::varchar  -- 将 user_id 转换为字符串
+            WHERE user_id != %s::varchar 
             AND interests && %s::text[];
-        """, (str(user_id), interests))  # 将 user_id 转换为字符串
+        """, (str(user_id), interests))
         matches = cursor.fetchall()
-        print(f"找到匹配用户：{matches}")  # 打印匹配结果
+        print(f"Found matching users: {matches}")
         return matches
     except Exception as e:
-        print(f"匹配用户失败: {e}")
+        print(f"Failed to match users: {e}")
         return []
     finally:
         conn.close()
