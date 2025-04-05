@@ -1,0 +1,20 @@
+# Exported from Render on 2025-04-05T22:53:45Z
+services:
+- type: web
+  name: 7940_Bot-1
+  runtime: docker
+  repo: https://github.com/fofuhua/7940_Bot
+  plan: free
+  envVars:
+  - key: OPENAI_API_KEY
+    sync: false
+  - key: TELEGRAM_TOKEN
+    sync: false
+  - key: DATABASE_URL
+    sync: false
+  - key: PORT
+        value: 10000  # 必须与 Dockerfile 中的 $PORT 一致
+  region: singapore
+  dockerContext: .
+  dockerfilePath: ./Dockerfile
+version: "1"
