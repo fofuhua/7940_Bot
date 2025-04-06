@@ -1,4 +1,3 @@
-# main.py
 import os
 import uvicorn
 from telegram import Update
@@ -20,6 +19,12 @@ from fastapi import FastAPI
 # 加载环境变量
 load_dotenv()
 
+# 创建 FastAPI 应用实例
+app = FastAPI()
+
+@app.get("/")
+async def read_root():
+    return {"message": "Hello, World!"}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
@@ -151,22 +156,11 @@ async def _generate_match_reason(base_interests: list, match: dict) -> str:
         print(f"推荐理由生成失败: {str(e)}")
         return "这些游戏可能有相似的玩法特点"
 
-
 def main():
-    """启动机器人"""
-    # 初始化应用
-    app = ApplicationBuilder() \
-        .token(os.getenv("TELEGRAM_TOKEN")) \
-        .concurrent_updates(True) \
-        .build()
-
-    # 注册处理器
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # 启动轮询
-    print("🤖 机器人已启动...")
-    app.run_polling()
+    """启动应用"""
+    # 启动 Uvicorn 服务器
+    port = int(os.getenv("PORT", 8000))  # 从环境变量获取端口
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     main()
