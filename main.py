@@ -16,7 +16,7 @@ from database import (
 )
 from dotenv import load_dotenv
 from fastapi import FastAPI
-app = FastAPI()
+
 # 加载环境变量
 load_dotenv()
 
