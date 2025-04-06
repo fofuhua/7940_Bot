@@ -21,4 +21,4 @@ ENV CONFIG_PATH=config/secrets/.prod.env
 
 EXPOSE 10000
 
-CMD ["uvicorn", "main:fastapi_app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "main,py", "--host", "0.0.0.0", "--port", "8000"]
