@@ -14,6 +14,20 @@ from database import (
     openai_client
 )
 from dotenv import load_dotenv
+from fastapi import FastAPI
+
+# 必须定义变量名为 app（与 Gunicorn 命令中的 `:app` 对应）
+app = FastAPI()
+
+# 在代码中显式声明端口绑定（与 Gunicorn 命令互补）
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))  # 必须读取 Render 注入的 $PORT
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "FastAPI on Render"}
 
 # 加载环境变量
 load_dotenv()
