@@ -1,5 +1,5 @@
 # Dockerfile 多阶段构建
-FROM python:3.10-slim as builder
+FROM python:3.10-slim AS builder
 # ------------- 安装系统依赖 -------------
 # 安装 psycopg2 所需的 PostgreSQL 开发库和编译工具
 RUN apt-get update && apt-get install -y --no-install-recommends \
