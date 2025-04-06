@@ -20,16 +20,6 @@ from fastapi import FastAPI
 # 加载环境变量
 load_dotenv()
 
-# Initialize FastAPI app
-fastapi_app = FastAPI()
-
-@fastapi_app.get("/")
-async def read_root():
-    return {"message": "Welcome to the FastAPI application!"}
-@fastapi_app.head("/")
-async def read_root_head():
-    # Typically, a HEAD request returns the same headers as a GET request but without the body
-    return
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
