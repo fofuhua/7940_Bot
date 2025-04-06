@@ -12,9 +12,6 @@ services:
     sync: false
   - key: DATABASE_URL
     sync: false
-  - key: PORT
-        value: 10000  # 必须与 Dockerfile 中的 $PORT 一致
-  region: singapore
   dockerContext: .
   dockerfilePath: ./Dockerfile
 version: "1"
