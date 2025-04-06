@@ -21,9 +21,11 @@ from fastapi import FastAPI
 app = FastAPI()
 
 # 明确定义根路由（Render 健康检查会请求该路径）
-@app.get("/")
+# 允许 HEAD 方法
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
-    return {"status": "服务已上线"}
+    return {"status": "ok"}
+     
     
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))  # 必须使用环境变量
