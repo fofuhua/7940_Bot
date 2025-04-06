@@ -20,6 +20,11 @@ from fastapi import FastAPI
 # 必须定义变量名为 app（与 Gunicorn 命令中的 `:app` 对应）
 app = FastAPI()
 
+# 明确定义根路由（Render 健康检查会请求该路径）
+@app.get("/")
+async def root():
+    return {"status": "服务已上线"}
+    
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))  # 必须使用环境变量
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
