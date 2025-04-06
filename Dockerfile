@@ -19,4 +19,4 @@ COPY . .
 ENV PATH=/root/.local/bin:$PATH
 ENV CONFIG_PATH=config/secrets/.prod.env
 
-CMD ["gunicorn", "main"]
+CMD ["python", "main"]
