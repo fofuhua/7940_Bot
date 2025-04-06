@@ -1,33 +1,24 @@
+# main.py
 import os
 import uvicorn
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from database import save_user_interests, find_matching_users, openai_client
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes
+)
+from database import (
+    save_user_interests,
+    find_matching_users,
+    openai_client
+)
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
 # 加载环境变量
 load_dotenv()
-
-app = FastAPI()
-
-@app.get("/")
-async def read_root():
-    return {"Hello": "World"}
-
-@app.on_event("startup")
-async def startup_event():
-    """启动 Telegram 机器人"""
-    telegram_app = ApplicationBuilder() \
-        .token(os.getenv("TELEGRAM_TOKEN")) \
-        .concurrent_updates(True) \
-        .build()
-
-    telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("🤖 机器人已启动...")
-    telegram_app.run_polling()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
@@ -48,15 +39,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text
 
     try:
+        # 第一步：提取兴趣关键词
         raw_interests = await _extract_interests(user_input)
         if not raw_interests:
             await update.message.reply_text("⚠️ 没有识别到有效的游戏兴趣，请尝试更具体的描述（如游戏名称或类型）")
             return
 
+        # 第二步：保存到数据库
         if not save_user_interests(user_id, username, raw_interests):
             await update.message.reply_text("❌ 保存兴趣失败，请稍后再试")
             return
 
+        # 第三步：查找匹配
         await _process_matching(update, user_id, raw_interests)
 
     except Exception as e:
@@ -88,19 +82,21 @@ async def _extract_interests(text: str) -> list:
 
 async def _process_matching(update: Update, user_id: str, interests: list):
     """处理匹配流程"""
+    # 精确匹配
     exact_matches = await find_matching_users(user_id, interests)
     if exact_matches:
         match_list = "\n".join(
             [f"· {user['username']} （共同兴趣：{', '.join(user['interests'])}）"
-             for user in exact_matches[:3]]
+             for user in exact_matches[:3]]  # 显示前3个
         )
         await update.message.reply_text(
             f"🎉 找到{len(exact_matches)}位兴趣相同的玩家：\n{match_list}"
         )
 
+    # 跨游戏匹配
     cross_matches = await find_matching_users(user_id, interests)
     if cross_matches:
-        for match in cross_matches[:3]:
+        for match in cross_matches[:3]:  # 显示前3个
             common = match["common_games"]
             msg = (
                 f"🌟 推荐玩家：{match['username']}\n"
@@ -115,28 +111,33 @@ async def _process_matching(update: Update, user_id: str, interests: list):
 async def _generate_match_reason(base_interests: list, match: dict) -> str:
     """生成匹配原因描述（修复数据结构问题）"""
     try:
-        candidate_interests = match.get("interests", [])
+        # 修复数据结构访问问题
+        candidate_interests = match.get("interests", [])  # 直接访问interests字段
         
+        # 验证输入有效性
         if not base_interests or not candidate_interests:
             return "基于双方游戏兴趣的相似性推荐"
         
+        # 构造更明确的提示词
         system_prompt = f"""你是一个专业的游戏匹配分析师。请根据以下游戏兴趣列表，用1句话说明匹配原因：
         我的兴趣：{', '.join(base_interests[:5])}（最多展示5个）
         对方兴趣：{', '.join(candidate_interests[:5])}（最多展示5个）
         分析角度：游戏类型、玩法机制、用户画像、流行趋势等
         输出要求：用口语化中文，不超过20个字"""
         
+        # 添加API调用保护
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo",  # 确认可用模型
             messages=[{
                 "role": "system",
                 "content": system_prompt
             }],
             temperature=0.7,
             max_tokens=50,
-            timeout=10
+            timeout=10  # 添加超时设置
         )
         
+        # 处理空响应
         if not response.choices[0].message.content:
             raise ValueError("OpenAI返回空内容")
             
@@ -149,6 +150,22 @@ async def _generate_match_reason(base_interests: list, match: dict) -> str:
         print(f"推荐理由生成失败: {str(e)}")
         return "这些游戏可能有相似的玩法特点"
 
+
+def main():
+    """启动机器人"""
+    # 初始化应用
+    app = ApplicationBuilder() \
+        .token(os.getenv("TELEGRAM_TOKEN")) \
+        .concurrent_updates(True) \
+        .build()
+
+    # 注册处理器
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # 启动轮询
+    print("🤖 机器人已启动...")
+    app.run_polling()
+
 if __name__ == "__main__":
-    port = int(os.environ.get('PORT', 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    main()
