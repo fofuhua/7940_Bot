@@ -1,7 +1,7 @@
-# Exported from Render on 2025-04-05T22:53:45Z
+# Exported from Render on 2025-04-06T16:34:12Z
 services:
 - type: web
-  name: 7940_Bot-1
+  name: 7940_Bot
   runtime: docker
   repo: https://github.com/fofuhua/7940_Bot
   plan: free
