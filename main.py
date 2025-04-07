@@ -16,6 +16,8 @@ from database import (
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
+load_dotenv()  # 加载环境变量
+
 app = FastAPI()
 
 @app.get("/")
@@ -158,6 +160,20 @@ async def _generate_match_reason(base_interests: list, match: dict) -> str:
 
 def main():
     """启动应用"""
+    # 初始化 Telegram Bot
+    telegram_token = os.getenv("TELEGRAM_TOKEN")
+    if not telegram_token:
+        raise ValueError("Telegram token is not set in environment variables.")
+    
+    application = ApplicationBuilder().token(telegram_token).build()
+
+    # 添加命令处理程序
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # 启动 Telegram Bot
+    application.run_polling()
+
     # 启动 Uvicorn 服务器
     port = int(os.getenv("PORT", 8000))  # 从环境变量获取端口
     uvicorn.run(app, host="0.0.0.0", port=port)
