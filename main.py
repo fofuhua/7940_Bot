@@ -159,7 +159,7 @@ async def _generate_match_reason(base_interests: list, match: dict) -> str:
 def main():
     """启动应用"""
     # 启动 Uvicorn 服务器
-    port = int(os.getenv("PORT", 8000))  # 从环境变量获取端口
+    port = int(os.getenv("PORT", 10000))  # 从环境变量获取端口
     uvicorn.run(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
