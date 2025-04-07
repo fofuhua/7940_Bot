@@ -1,154 +1,235 @@
+# database.py 修改版
 import os
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes
-)
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
-from fastapi import FastAPI
-
-# 延迟导入以避免循环依赖
-def import_database_functions():
-    global save_user_interests, find_matching_users, openai_client
-    from database import save_user_interests, find_matching_users, openai_client
+from openai import OpenAI
+from typing import List, Dict
+import asyncio
 
 # 加载环境变量
 load_dotenv()
 
-app = FastAPI()
+# 初始化OpenAI客户端
+client = OpenAI(
+    api_key="sk-13DJKXp6QBphm8MaRbUwOiwRmx9E2qwW6lf9dMP30eEeqyXJ",
+    base_url="https://api.deerapi.com/v1"
+)
 
-@app.on_event("startup")
-async def startup_event():
-    """启动 Telegram 机器人"""
-    import_database_functions()  # 在启动时导入数据库相关功能
-    telegram_app = ApplicationBuilder() \
-        .token(os.getenv("TELEGRAM_TOKEN")) \
-        .concurrent_updates(True) \
-        .build()
-
-    telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("🤖 Telegram 机器人已启动...")
-    telegram_app.run_polling()
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理 /start 命令"""
-    welcome_msg = (
-        "🎮 欢迎来到游戏伙伴匹配机器人！\n\n"
-        "请告诉我你喜欢的游戏或游戏类型，例如：\n"
-        "· 我喜欢原神和王者荣耀\n"
-        "· 我常玩生存恐怖类和开放世界游戏\n"
-        "· 最近在玩艾尔登法环和星露谷物语"
-    )
-    await update.message.reply_text(welcome_msg)
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理用户消息"""
-    user = update.message.from_user
-    user_id = str(user.id)
-    username = user.username or user.first_name or "匿名玩家"
-    user_input = update.message.text
-
+# 数据库连接池
+def _get_connection():
+    """获取数据库连接（适配Heroku）"""
     try:
-        raw_interests = await _extract_interests(user_input)
-        if not raw_interests:
-            await update.message.reply_text("⚠️ 没有识别到有效的游戏兴趣，请尝试更具体的描述（如游戏名称或类型）")
-            return
-
-        if not save_user_interests(user_id, username, raw_interests):
-            await update.message.reply_text("❌ 保存兴趣失败，请稍后再试")
-            return
-
-        await _process_matching(update, user_id, raw_interests)
-
+        return psycopg2.connect(
+            dsn=os.getenv("DATABASE_URL"),
+            cursor_factory=RealDictCursor,
+            sslmode='require'  # 强制SSL
+        )
     except Exception as e:
-        print(f"处理消息时出错: {e}")
-        await update.message.reply_text("🌀 服务暂时不可用，请稍后再试")
+        print(f"连接失败: {e}")
+        return None
 
-async def _extract_interests(text: str) -> list:
-    """调用OpenAI提取兴趣关键词"""
-    response = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "你是一个游戏兴趣提取助手。请从用户消息中提取游戏或游戏类型关键词，"
-                    "用中文逗号分隔。只返回关键词，不要解释。\n"
-                    "示例输入：'我喜欢玩原神和王者荣耀'\n"
-                    "示例输出：原神, 王者荣耀"
-                )
-            },
-            {"role": "user", "content": text}
-        ],
-        temperature=0.3
-    )
-    
-    raw = response.choices[0].message.content.strip()
-    return [x.strip() for x in raw.split(",") if x.strip()]
-
-async def _process_matching(update: Update, user_id: str, interests: list):
-    """处理匹配流程"""
-    exact_matches = await find_matching_users(user_id, interests)
-    if exact_matches:
-        match_list = "\n".join(
-            [f"· {user['username']} （共同兴趣：{', '.join(user['interests'])}）"
-             for user in exact_matches[:3]]
-        )
-        await update.message.reply_text(
-            f"🎉 找到{len(exact_matches)}位兴趣相同的玩家：\n{match_list}"
-        )
-
-    cross_matches = await find_matching_users(user_id, interests)
-    if cross_matches:
-        for match in cross_matches[:3]:
-            common = match["common_games"]
-            msg = (
-                f"🌟 推荐玩家：{match['username']}\n"
-                f"📈 匹配度：{match['score']*100:.0f}%\n"
-                f"🎮 共同游戏：{', '.join(common) if common else '暂无'}\n"
-                f"💡 推荐理由：{await _generate_match_reason(interests, match)}"
-            )
-            await update.message.reply_text(msg)
-    elif not exact_matches:
-        await update.message.reply_text("暂时没有找到匹配的玩家，我们会继续为您关注！")
-
-async def _generate_match_reason(base_interests: list, match: dict) -> str:
-    """生成匹配原因描述（修复数据结构问题）"""
+def _create_tables():
+    """初始化数据库表结构"""
+    conn = _get_connection()
     try:
-        candidate_interests = match.get("interests", [])
-        if not base_interests or not candidate_interests:
-            return "基于双方游戏兴趣的相似性推荐"
-        
-        system_prompt = f"""你是一个专业的游戏匹配分析师。请根据以下游戏兴趣列表，用1句话说明匹配原因：
-        我的兴趣：{', '.join(base_interests[:5])}（最多展示5个）
-        对方兴趣：{', '.join(candidate_interests[:5])}（最多展示5个）
-        分析角度：游戏类型、玩法机制、用户画像、流行趋势等
-        输出要求：用口语化中文，不超过20个字"""
-        
-        response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+        with conn.cursor() as cur:
+            # 用户表
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS new_users (
+                    user_id VARCHAR(255) PRIMARY KEY,
+                    username VARCHAR(255),
+                    interests TEXT[],
+                    last_active TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            
+            # 游戏相似度缓存表
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS game_similarities (
+                    game1 VARCHAR(255),
+                    game2 VARCHAR(255),
+                    similarity FLOAT CHECK (similarity BETWEEN 0 AND 1),
+                    PRIMARY KEY (game1, game2)
+                 )
+            """)
+            
+            # 创建索引
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_interests 
+                ON new_users USING GIN (interests)
+            """)
+            conn.commit()
+    except Exception as e:
+        print(f"表创建失败: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+# 初始化时创建表
+_create_tables()
+
+def save_user_interests(user_id, username, interests):
+    """保存用户兴趣（带最后活跃时间）"""
+    conn = _get_connection()
+    if not conn:
+        return False
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO new_users (user_id, username, interests, last_active)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (user_id) DO UPDATE SET
+                    username = EXCLUDED.username,
+                    interests = EXCLUDED.interests,
+                    last_active = NOW()
+            """, (str(user_id), username, interests))
+            conn.commit()
+            return True
+    except Exception as e:
+        print(f"保存用户兴趣失败: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+def _get_cached_similarity(game1, game2):
+    """从数据库获取缓存的相似度"""
+    conn = _get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT similarity 
+                FROM game_similarities
+                WHERE (game1 = %s AND game2 = %s)
+                OR (game1 = %s AND game2 = %s)
+            """, (game1, game2, game2, game1))
+            result = cur.fetchone()
+            return result['similarity'] if result else None
+    finally:
+        conn.close()
+
+# 修改缓存写入方式（避免异步任务未完成时连接关闭）
+async def _cache_similarity(game1, game2, similarity):
+    """异步安全版缓存"""
+    try:
+        with psycopg2.connect(os.getenv("DATABASE_URL"), sslmode='require') as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO game_similarities 
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                """, (game1, game2, similarity))
+                conn.commit()
+    except Exception as e:
+        print(f"缓存写入失败: {e}")
+
+async def analyze_game_pair(game1: str, game2: str) -> float:
+    """分析游戏相似度（带缓存机制）"""
+    # 优先读取缓存
+    cached = _get_cached_similarity(game1, game2)
+    if cached is not None:
+        return cached
+
+    # 调用OpenAI API
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[{
                 "role": "system",
-                "content": system_prompt
+                "content": "你是一个游戏分析专家，请评估以下两个游戏的相似度（0-1），考虑类型、玩法、画风等因素，直接返回数字"
+            }, {
+                "role": "user",
+                "content": f"《{game1}》和《{game2}》的相似度分数是："
             }],
-            temperature=0.7,
-            max_tokens=50,
-            timeout=10
+            temperature=0.2
         )
+        similarity = max(0.0, min(1.0, float(response.choices[0].message.content.strip())))
         
-        if not response.choices[0].message.content:
-            raise ValueError("OpenAI返回空内容")
-            
-        return response.choices[0].message.content.strip()
-        
-    except KeyError as e:
-        print(f"数据结构错误: {str(e)}")
-        return "发现共同的游戏兴趣"
+        # 异步缓存结果
+        asyncio.create_task(_cache_similarity(game1, game2, similarity))
+        return similarity
     except Exception as e:
-        print(f"推荐理由生成失败: {str(e)}")
-        return "这些游戏可能有相似的玩法特点"
+        print(f"游戏相似度分析失败: {e}")
+        return 0.0
+
+async def find_matching_users(user_id: str, interests: List[str], threshold: float = 0.6) -> List[Dict]:
+    """查找跨游戏匹配用户（修复参数传递问题）"""
+    conn = _get_connection()
+    try:
+        # 获取候选用户（修复字段名匹配问题）
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT user_id, username, interests 
+                FROM new_users 
+                WHERE user_id != %s 
+                AND last_active > NOW() - INTERVAL '7 days'
+            """, (str(user_id),))
+            candidates = [dict(row) for row in cur.fetchall()]  # 转换为字典
+
+        # 修复参数传递（移除冗余参数）
+        tasks = [
+            _calculate_user_similarity(
+                base_interests=interests,  # 使用正确参数名
+                candidate_data=candidate   # 只传必要参数
+            )
+            for candidate in candidates
+        ]
+        
+        results = await asyncio.gather(*tasks)
+        
+        # 筛选和排序结果（添加类型检查）
+        valid_results = [
+            res for res in results 
+            if isinstance(res, dict) and res.get("score", 0) >= threshold
+        ]
+        return sorted(valid_results, key=lambda x: x["score"], reverse=True)[:10]
+    finally:
+        conn.close()
+
+
+async def _calculate_user_similarity(base_interests: List[str], candidate_data: dict) -> dict:
+    """计算用户相似度得分（安全字段处理）"""
+    # 安全获取兴趣数据
+    raw_interests = candidate_data.get("interests", [])
+    
+    # 处理 PostgreSQL 数组格式
+    if isinstance(raw_interests, str):
+        candidate_interests = [i.strip() for i in raw_interests.strip('{}').split(',')]
+    elif isinstance(raw_interests, list):
+        candidate_interests = raw_interests
+    else:
+        candidate_interests = []
+
+    # 精确匹配计算
+    common = set(base_interests) & set(candidate_interests)
+    total = len(common) * 1.0
+    valid_pairs = len(common)
+    
+    # 跨游戏匹配（添加空值保护）
+    try:
+        base_remain = [g for g in base_interests if g not in common]
+        candidate_remain = [g for g in candidate_interests if g not in common]
+        
+        for g1 in base_remain:
+            for g2 in candidate_remain:
+                similarity = await analyze_game_pair(g1, g2)
+                if similarity and similarity >= 0.4:
+                    total += similarity
+                    valid_pairs += 1
+    except Exception as e:
+        print(f"匹配计算异常: {str(e)}")
+
+    # 安全计算得分
+    score = total / valid_pairs if valid_pairs > 0 else 0.0
+    return {
+        "user_id": candidate_data.get("user_id", ""),
+        "username": candidate_data.get("username", "未知用户"),
+        "score": round(score, 2),
+        "common_games": list(common),
+        "interests": candidate_interests  # 返回处理后的兴趣列表
+    }
+
+
+openai_client = client 
