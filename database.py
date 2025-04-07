@@ -7,13 +7,13 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
-from database import (
-    save_user_interests,
-    find_matching_users,
-    openai_client
-)
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
+
+# 延迟导入以避免循环依赖
+def import_database_functions():
+    global save_user_interests, find_matching_users, openai_client
+    from database import save_user_interests, find_matching_users, openai_client
 
 # 加载环境变量
 load_dotenv()
@@ -23,6 +23,7 @@ app = FastAPI()
 @app.on_event("startup")
 async def startup_event():
     """启动 Telegram 机器人"""
+    import_database_functions()  # 在启动时导入数据库相关功能
     telegram_app = ApplicationBuilder() \
         .token(os.getenv("TELEGRAM_TOKEN")) \
         .concurrent_updates(True) \
