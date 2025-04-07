@@ -16,15 +16,17 @@ from database import (
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-# 加载环境变量
-load_dotenv()
+from fastapi import FastAPI
 
-# 创建 FastAPI 应用实例
 app = FastAPI()
 
 @app.get("/")
 async def read_root():
     return {"message": "Hello, World!"}
+
+@app.head("/")
+async def read_root_head():
+    return {}  # HEAD请求不返回内容，只返回响应头
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
