@@ -26,7 +26,7 @@ async def read_root():
 
 @app.head("/")
 async def read_root_head():
-    return {}  # HEAD请求不返回内容，只返回响应头
+    return {}  
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
