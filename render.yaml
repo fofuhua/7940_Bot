@@ -1,9 +1,9 @@
 services:
-- type: web
+- type: work
   name: 7940_Bot
   runtime: docker
   repo: https://github.com/fofuhua/7940_Bot
-  plan: free
+  plan: starter
   envVars:
   - key: OPENAI_API_KEY
     sync: false
