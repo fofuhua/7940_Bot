@@ -1,4 +1,5 @@
 import os
+import uvicorn
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -7,22 +8,26 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
-from database import (
-    save_user_interests,
-    find_matching_users,
-    openai_client
-)
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
-# 加载环境变量
+# Load environment variables
 load_dotenv()
 
-app = FastAPI()
+# Define your FastAPI app with lifespan
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    print("🤖 Telegram 机器人启动中...")
+    yield
+    # Shutdown logic
+    print("🤖 Telegram 机器人已关闭")
 
-@app.on_event("startup")
-async def startup_event():
-    """启动 Telegram 机器人"""
+app = FastAPI(lifespan=lifespan)
+
+# Initialize Telegram bot
+def init_telegram_bot():
     telegram_app = ApplicationBuilder() \
         .token(os.getenv("TELEGRAM_TOKEN")) \
         .concurrent_updates(True) \
@@ -31,9 +36,9 @@ async def startup_event():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🤖 Telegram 机器人已启动...")
-    telegram_app.run_polling()
+    return telegram_app
 
+# Define Telegram bot handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
     welcome_msg = (
@@ -151,3 +156,10 @@ async def _generate_match_reason(base_interests: list, match: dict) -> str:
     except Exception as e:
         print(f"推荐理由生成失败: {str(e)}")
         return "这些游戏可能有相似的玩法特点"
+
+if __name__ == "__main__":
+    # Bind to the PORT environment variable or default to 10000
+    port = int(os.environ.get("PORT", 10000))
+    telegram_app = init_telegram_bot()
+    telegram_app.run_polling()
+    uvicorn.run(app, host="0.0.0.0", port=port)
