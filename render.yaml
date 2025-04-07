@@ -1,5 +1,5 @@
 services:
-- type: background worker
+- type: worker
   name: 7940_Bot
   runtime: docker
   repo: https://github.com/fofuhua/7940_Bot
