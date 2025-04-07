@@ -1,6 +1,5 @@
 # main.py
 import os
-import uvicorn
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -15,7 +14,6 @@ from database import (
     openai_client
 )
 from dotenv import load_dotenv
-from fastapi import FastAPI
 
 # 加载环境变量
 load_dotenv()
